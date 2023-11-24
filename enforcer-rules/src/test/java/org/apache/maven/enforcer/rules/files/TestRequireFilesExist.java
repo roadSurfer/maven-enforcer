@@ -20,14 +20,20 @@ package org.apache.maven.enforcer.rules.files;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 
+import org.apache.maven.enforcer.rule.api.EnforcerLogger;
 import org.apache.maven.enforcer.rule.api.EnforcerRuleException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * Test the "require files exist" rule.
@@ -40,8 +46,13 @@ class TestRequireFilesExist {
 
     private final RequireFilesExist rule = new RequireFilesExist();
 
+    @BeforeEach
+    void setup() {
+        rule.setLog(mock(EnforcerLogger.class));
+    }
+
     @Test
-    void testFileExists() throws Exception {
+    void testFileExist() throws Exception {
         File f = File.createTempFile("junit", null, temporaryFolder);
 
         rule.setFilesList(Collections.singletonList(f.getCanonicalFile()));
@@ -50,12 +61,106 @@ class TestRequireFilesExist {
     }
 
     @Test
-    void testFileOsIndependentExists() {
-        rule.setFilesList(Collections.singletonList(new File("POM.xml")));
+    void testFileExistCaseSensitive() throws Exception {
+        File f = File.createTempFile("case_test", null, temporaryFolder);
 
-        EnforcerRuleException e = assertThrows(EnforcerRuleException.class, () -> rule.execute());
-
+        // Filesystem is:
+        //   Case-sensitive: Can't find the containing folder due to incorrect casing in the path
+        //   Case-insensitive: Containing folder will be found, but we should still fail as file name does not match
+        rule.setFilesList(Collections.singletonList(
+                new File(f.getCanonicalFile().toString().toUpperCase())));
+        EnforcerRuleException e = assertThrows(EnforcerRuleException.class, rule::execute);
         assertNotNull(e.getMessage());
+
+        rule.setCaseSenstive(true);
+        e = assertThrows(EnforcerRuleException.class, rule::execute);
+        assertNotNull(e.getMessage());
+
+        // Filesystem is either: Containing folder will be found, but should still fail to match on file
+        rule.setFilesList(Collections.singletonList(
+                new File(String.format("%s/%s", f.getParentFile(), f.getName().toUpperCase()))));
+        e = assertThrows(EnforcerRuleException.class, rule::execute);
+        assertNotNull(e.getMessage());
+    }
+
+    @Test
+    void testFileExistCaseInsensitive() throws Exception {
+        File f = File.createTempFile("case_test", null, temporaryFolder);
+
+        rule.setFilesList(Collections.singletonList(
+                new File(f.getCanonicalFile().toString().toUpperCase())));
+        rule.setCaseSenstive(false);
+
+        // Filesystem is:
+        //   Case-sensitive: Can't find the containing folder due to incorrect casing in the path
+        //   Case-insensitive: Containing folder will be found, but we should still fail as file name does not match
+        if (rule.isFilesystemCaseSensitive()) {
+            EnforcerRuleException e = assertThrows(EnforcerRuleException.class, rule::execute);
+            assertNotNull(e.getMessage());
+        } else {
+            rule.execute();
+        }
+
+        // Filesystem is either: Containing folder will be found, and the file should be found
+        rule.setFilesList(Collections.singletonList(
+                new File(String.format("%s/%s", f.getParentFile(), f.getName().toUpperCase()))));
+        // No matter the file-system case-sensitivity, the containing folder will now be found
+        rule.execute();
+    }
+
+    @Test
+    void testFileSymbolicLinkExistCaseSensitive() throws Exception {
+        File canonicalFile = File.createTempFile("canonical_", null, temporaryFolder);
+        Path canonicalPath = Paths.get(canonicalFile.getAbsolutePath());
+        Path linkPath =
+                Files.createSymbolicLink(Paths.get(temporaryFolder.getAbsolutePath(), "symbolic.link"), canonicalPath);
+        File linkFile = new File(linkPath.toString());
+
+        // Filesystem is:
+        //   Case-sensitive: Can't find the containing folder due to incorrect casing in the path
+        //   Case-insensitive: Containing folder will be found, but we should still fail as file name does not match
+        rule.setFilesList(
+                Collections.singletonList(new File(linkFile.getAbsolutePath().toUpperCase())));
+        EnforcerRuleException e = assertThrows(EnforcerRuleException.class, rule::execute);
+        assertNotNull(e.getMessage());
+
+        rule.setCaseSenstive(true);
+        e = assertThrows(EnforcerRuleException.class, rule::execute);
+        assertNotNull(e.getMessage());
+
+        // Filesystem is either: Containing folder will be found, but should still fail to match on file
+        rule.setFilesList(Collections.singletonList(new File(String.format(
+                "%s/%s", linkFile.getParentFile(), linkFile.getName().toUpperCase()))));
+        e = assertThrows(EnforcerRuleException.class, rule::execute);
+        assertNotNull(e.getMessage());
+    }
+
+    @Test
+    void testFileSymbolicLinkExistCaseInsensitive() throws Exception {
+        File canonicalFile = File.createTempFile("canonical_", null, temporaryFolder);
+        Path canonicalPath = Paths.get(canonicalFile.getAbsolutePath());
+        Path linkPath =
+                Files.createSymbolicLink(Paths.get(temporaryFolder.getAbsolutePath(), "symbolic.link"), canonicalPath);
+        File linkFile = new File(linkPath.toString());
+
+        rule.setFilesList(Collections.singletonList(
+                new File(linkFile.getCanonicalFile().toString().toUpperCase())));
+        rule.setCaseSenstive(false);
+
+        // Filesystem is:
+        //   Case-sensitive: Can't find the containing folder due to incorrect casing in the path
+        //   Case-insensitive: Containing folder will be found as will the file
+        if (rule.isFilesystemCaseSensitive()) {
+            EnforcerRuleException e = assertThrows(EnforcerRuleException.class, rule::execute);
+            assertNotNull(e.getMessage());
+        } else {
+            rule.execute();
+        }
+
+        // Filesystem is either: Containing folder will be found, as should the file
+        rule.setFilesList(Collections.singletonList(new File(String.format(
+                "%s/%s", linkFile.getParentFile(), linkFile.getName().toUpperCase()))));
+        rule.execute();
     }
 
     @Test
@@ -106,7 +211,7 @@ class TestRequireFilesExist {
     }
 
     @Test
-    void testFileExistsSatisfyAny() throws EnforcerRuleException, IOException {
+    void testFileExistSatisfyAny() throws EnforcerRuleException, IOException {
         File f = File.createTempFile("junit", null, temporaryFolder);
         f.delete();
 
