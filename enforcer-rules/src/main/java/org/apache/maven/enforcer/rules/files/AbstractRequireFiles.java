@@ -76,9 +76,6 @@ abstract class AbstractRequireFiles extends AbstractStandardEnforcerRule {
             throw new EnforcerRuleError("The file list is empty and Null files are disabled.");
         }
 
-        // There has GO TO BE a better way to do this
-        filesystemCaseSensitive = probeFilesystemCaseSensitive();
-
         List<File> failures = new ArrayList<>();
         for (File file : files) {
             if (!allowNulls && file == null) {
@@ -172,6 +169,10 @@ abstract class AbstractRequireFiles extends AbstractStandardEnforcerRule {
 
     boolean isCaseSenstiveCheck() {
         return caseSenstive;
+    }
+
+    void setFilesystemCaseSenstive(boolean filesystemCaseSensitive) {
+        this.filesystemCaseSensitive = filesystemCaseSensitive;
     }
 
     boolean isFilesystemCaseSensitive() {
